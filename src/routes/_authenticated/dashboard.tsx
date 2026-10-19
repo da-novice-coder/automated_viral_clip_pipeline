@@ -1,11 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ChevronRight, Film, Link2, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { addVideo, processVideo, scoreClips } from "@/lib/clips.functions";
+import { usePipeline } from "@/hooks/use-pipeline";
 import { friendlyError } from "@/lib/types";
 import { useRealtime } from "@/hooks/use-realtime";
 import { Button } from "@/components/ui/button";
@@ -26,27 +25,6 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   }),
   component: Dashboard,
 });
-
-export function usePipeline() {
-  const add = useServerFn(addVideo);
-  const process = useServerFn(processVideo);
-  const score = useServerFn(scoreClips);
-  async function run(videoId: string) {
-    const r = await process({ data: { videoId } });
-    if (!r.ok) {
-      toast.error(friendlyError(r.error));
-      return;
-    }
-    toast.success("Transcript ready — finding the best moments…");
-    try {
-      const s = await score({ data: { videoId } });
-      toast.success(`${s.count} clip suggestions ready`);
-    } catch (e) {
-      toast.error(friendlyError(e instanceof Error ? e.message : String(e)));
-    }
-  }
-  return { add, run };
-}
 
 function Dashboard() {
   const qc = useQueryClient();
