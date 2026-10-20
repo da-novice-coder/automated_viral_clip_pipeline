@@ -25,11 +25,11 @@ export function parseYouTubeId(raw: string): string | null {
   try {
     const u = new URL(raw);
     const host = u.hostname.replace(/^www\.|^m\./, "");
-    if (host === "youtu.be") return u.pathname.slice(1).split("/")[0] || null;
+    if (host === "youtu.be") return u.pathname.slice(1).split("/")[0] ?? null;
     if (host === "youtube.com" || host === "music.youtube.com") {
       if (u.pathname === "/watch") return u.searchParams.get("v");
       const m = u.pathname.match(/^\/(shorts|embed|live)\/([\w-]{6,})/);
-      if (m) return m[2];
+      if (m?.[2]) return m[2];
     }
     return null;
   } catch {
@@ -61,6 +61,6 @@ export function friendlyError(msg: string | null | undefined): string {
   if (/busy/i.test(msg)) return "Another clip is rendering. It will start right after.";
   if (/unauthori/i.test(msg)) return "Your session expired. Please sign in again.";
   if (/timeout|timed out|aborted/i.test(msg)) return "The service took too long to respond. Please try again.";
-  const clean = msg.split("\n")[0].replace(/^Error:\s*/, "");
+  const clean = (msg.split("\n")[0] ?? "").replace(/^Error:\s*/, "");
   return clean.length > 160 ? "Something went wrong. Please try again." : clean;
 }

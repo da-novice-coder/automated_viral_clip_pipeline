@@ -19,7 +19,7 @@ const chip: Record<string, string> = {
 export function StatusChip({ status }: { status: string }) {
   const live = status === "transcribing" || status === "rendering" || status === "queued";
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold capitalize", chip[status] ?? chip.queued)}>
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold capitalize", chip[status] ?? chip["queued"])}>
       {live && <span className="size-1.5 animate-pulse rounded-full bg-current" />}
       {status}
     </span>
@@ -58,7 +58,7 @@ export function EmptyState({ icon, title, body }: { icon: ReactNode; title: stri
   );
 }
 
-export function PageHeader({ title, sub, right }: { title: string; sub?: string; right?: ReactNode }) {
+export function PageHeader({ title, sub, right }: { title: string; sub?: string | undefined; right?: ReactNode }) {
   return (
     <header className="mb-6 flex items-end justify-between gap-3">
       <div>

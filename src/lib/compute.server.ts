@@ -12,7 +12,7 @@ export async function computeFetch<T>(
   const res = await fetch(base + path, {
     method: init.method,
     headers,
-    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+    body: init.body !== undefined ? JSON.stringify(init.body) : null,
     signal: AbortSignal.timeout(init.timeoutMs ?? 120_000),
   });
   const text = await res.text();

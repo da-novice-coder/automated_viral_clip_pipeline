@@ -132,7 +132,7 @@ function TranscriptStep({ videoId, status, isDirect, onCreated }: { videoId: str
   }, [t.data, search]);
 
   const segs = t.data ?? [];
-  const range = start !== null && end !== null ? { s: segs[Math.min(start, end)].start, e: segs[Math.max(start, end)].end } : null;
+  const range = start !== null && end !== null ? { s: segs[Math.min(start, end)]?.start ?? 0, e: segs[Math.max(start, end)]?.end ?? 0 } : null;
   const tooLong = range ? range.e - range.s > MAX_CLIP_SECONDS : false;
 
   function tap(i: number) {

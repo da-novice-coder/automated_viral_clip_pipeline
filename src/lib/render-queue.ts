@@ -22,7 +22,7 @@ async function drain() {
   running = true;
   try {
     while (pending.length) {
-      const id = pending[0];
+      const id = pending[0]!;
       try {
         const r = await runner(id);
         if (!r.ok) toast.error(friendlyError(r.error));
