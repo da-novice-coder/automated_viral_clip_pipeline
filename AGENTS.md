@@ -8,3 +8,9 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+# Rules
+- Compute service calls go only through `src/lib/compute.server.ts` from server functions in `src/lib/clips.functions.ts` — keeps COMPUTE_* secrets off the browser.
+- Renders run strictly one at a time via the browser queue in `src/lib/render-queue.ts`, plus a server-side "busy" guard — the render service handles a single job.
+- Server functions use `requireSupabaseAuth` (RLS as the user), never the admin client — all data is per-user.
+- Bearer token is attached by the client function middleware in `src/start.ts` — needed for protected server functions.

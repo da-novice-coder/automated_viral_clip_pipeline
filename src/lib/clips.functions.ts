@@ -92,7 +92,7 @@ async function scoreWithAI(segments: Segment[]) {
     .parse(JSON.parse(text));
   const starts = segments.map((s) => s.start);
   const ends = segments.map((s) => s.end);
-  const snap = (v: number, arr: number[]) => arr.reduce((b, x) => (Math.abs(x - v) < Math.abs(b - v) ? x : b), arr[0]);
+  const snap = (v: number, arr: number[]) => arr.reduce<number>((b, x) => (Math.abs(x - v) < Math.abs(b - v) ? x : b), arr[0] ?? v);
   return parsed.clips
     .map((c) => ({ ...c, start: snap(c.start, starts), end: snap(c.end, ends) }))
     .filter((c) => c.end - c.start >= 10 && c.end - c.start <= 75);
