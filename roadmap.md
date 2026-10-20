@@ -1,0 +1,3 @@
+- [ ] Fix suggestion and clip card mobile layouts and inactive Publish footer.
+- [ ] Add confirmed video deletion and clip deletion with renderable suggestions.
+- [ ] Test deletion rules and verify available mobile views.
