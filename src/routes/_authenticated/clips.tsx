@@ -1,13 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { Clapperboard } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtime } from "@/hooks/use-realtime";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState, PageHeader } from "@/components/app-ui";
 import { ClipCard } from "@/components/clip-card";
-import { friendlyError } from "@/lib/types";
 
 export const Route = createFileRoute("/_authenticated/clips")({
   head: () => ({
@@ -24,7 +22,6 @@ export const Route = createFileRoute("/_authenticated/clips")({
 });
 
 function ClipBank() {
-  const qc = useQueryClient();
   useRealtime(["clips"], [["clips"]]);
   const q = useQuery({
     queryKey: ["clips"],
@@ -34,16 +31,6 @@ function ClipBank() {
       return data;
     },
   });
-
-  async function del(id: string) {
-    if (!confirm("Delete this clip?")) return;
-    const { error } = await supabase.from("clips").delete().eq("id", id);
-    if (error) toast.error(friendlyError(error.message));
-    else {
-      toast.success("Clip deleted");
-      void qc.invalidateQueries({ queryKey: ["clips"] });
-    }
-  }
 
   return (
     <>
@@ -56,7 +43,7 @@ function ClipBank() {
         <EmptyState icon={<Clapperboard className="size-8" />} title="Your clip bank is empty" body="Rendered clips from all your videos will show up here." />
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {q.data.map((c) => <ClipCard key={c.id} clip={c} onDelete={del} />)}
+           {q.data.map((c) => <ClipCard key={c.id} clip={c} />)}
         </div>
       )}
     </>

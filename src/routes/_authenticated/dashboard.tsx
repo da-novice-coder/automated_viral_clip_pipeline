@@ -2,7 +2,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ChevronRight, Film, Link2, Upload } from "lucide-react";
+import { ChevronRight, Film, Link2, Upload, MoreHorizontal, Trash2 } from "lucide-react";
+import { DeleteConfirmation } from "@/components/delete-confirmation";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { deleteOwnedRow } from "@/lib/deletion";
+import { cancelPendingRenders } from "@/lib/render-queue";
 import { supabase } from "@/integrations/supabase/client";
 import { usePipeline } from "@/hooks/use-pipeline";
 import { friendlyError } from "@/lib/types";
@@ -30,6 +34,8 @@ function Dashboard() {
   const qc = useQueryClient();
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const { add, run } = usePipeline();
   useRealtime(["videos"], [["videos"]]);
 
@@ -44,6 +50,24 @@ function Dashboard() {
       return data;
     },
   });
+
+  async function removeVideo() {
+    if (!deleteId) return;
+    setDeleting(true);
+    try {
+      const { data: candidates, error } = await supabase.from("clip_candidates").select("id").eq("video_id", deleteId);
+      if (error) throw error;
+      await deleteOwnedRow(supabase, "videos", deleteId);
+      cancelPendingRenders((candidates ?? []).map((c) => c.id));
+      setDeleteId(null);
+      await qc.invalidateQueries({ predicate: ({ queryKey }) => ["videos", "video", "clips", "vclips", "candidates", "transcript"].includes(String(queryKey[0])) });
+      toast.success("Video and its transcript, suggestions, and clips deleted");
+    } catch (error) {
+      toast.error(friendlyError(error instanceof Error ? error.message : String(error)));
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -81,8 +105,8 @@ function Dashboard() {
           <Button type="submit" variant="hero" className="h-11" disabled={busy || !url.trim()}>
             {busy ? "Adding…" : "Add video"}
           </Button>
-          <Button type="button" variant="soft" className="h-11" disabled title="Coming soon">
-            <Upload /> Upload · Soon
+          <Button type="button" variant="soft" className="h-11" disabled>
+            <Upload /> Upload
           </Button>
         </div>
       </form>
@@ -97,8 +121,9 @@ function Dashboard() {
           <EmptyState icon={<Film className="size-8" />} title="No videos yet" body="Paste a YouTube link above to get your first clips." />
         ) : (
           q.data.map((v) => (
-            <div key={v.id} className="rounded-2xl border bg-card">
-              <Link to="/videos/$id" params={{ id: v.id }} className="flex items-center gap-3 p-3">
+            <div key={v.id} className="overflow-hidden rounded-xl border bg-card">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 pr-2">
+              <Link to="/videos/$id" params={{ id: v.id }} className="flex min-w-0 items-center gap-3 p-3">
                 <div className="aspect-video w-24 shrink-0 overflow-hidden rounded-lg bg-muted">
                   {v.youtube_id ? (
                     <img src={`https://i.ytimg.com/vi/${v.youtube_id}/mqdefault.jpg`} alt="" className="size-full object-cover" loading="lazy" />
@@ -114,8 +139,13 @@ function Dashboard() {
                     <StatusChip status={v.status} />
                   </div>
                 </div>
-                <ChevronRight className="size-4 text-muted-foreground" />
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
               </Link>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" aria-label="Video options" title="Video options" className="shrink-0"><MoreHorizontal /></Button></DropdownMenuTrigger>
+                <DropdownMenuContent align="end"><DropdownMenuItem className="text-destructive" onSelect={() => setDeleteId(v.id)}><Trash2 /> Delete video</DropdownMenuItem></DropdownMenuContent>
+              </DropdownMenu>
+              </div>
               {v.status === "failed" && (
                 <div className="px-3 pb-3">
                   <ErrorState message={v.error} onRetry={() => void run(v.id)} />
@@ -125,6 +155,7 @@ function Dashboard() {
           ))
         )}
       </section>
+      <DeleteConfirmation open={deleteId !== null} onOpenChange={(open) => { if (!open) setDeleteId(null); }} title="Delete video?" description="This permanently removes the video, its transcript, all suggestions, and all associated clips from your library." busy={deleting} onConfirm={() => void removeVideo()} />
     </>
   );
 }

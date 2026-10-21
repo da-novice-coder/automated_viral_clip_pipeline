@@ -1,3 +1,4 @@
-- [ ] Fix suggestion and clip card mobile layouts and inactive Publish footer.
-- [ ] Add confirmed video deletion and clip deletion with renderable suggestions.
-- [ ] Test deletion rules and verify available mobile views.
+- [x] Fix suggestion and clip card mobile layouts and inactive Publish footer.
+- [x] Add confirmed video deletion and clip deletion with renderable suggestions.
+- [x] Test deletion rules and verify isolated clip cards at 320, 375, 768, and 1280px.
+- [ ] Verify signed-in deletion → suggestion → render end-to-end. Blocker: external Supabase has no available authenticated test session.

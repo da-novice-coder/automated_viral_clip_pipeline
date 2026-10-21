@@ -5,12 +5,12 @@ import { cn } from "@/lib/utils";
 import { friendlyError } from "@/lib/types";
 
 const chip: Record<string, string> = {
-  queued: "bg-muted text-muted-foreground",
+  queued: "bg-primary/15 text-primary",
   transcribing: "bg-info/15 text-info",
   ready: "bg-success/15 text-success",
   failed: "bg-destructive/15 text-destructive",
-  suggested: "bg-muted text-muted-foreground",
-  approved: "bg-info/15 text-info",
+  suggested: "bg-primary/15 text-primary",
+  approved: "bg-success/15 text-success",
   rejected: "bg-muted text-muted-foreground line-through",
   rendering: "bg-warning/15 text-warning",
   rendered: "bg-success/15 text-success",
@@ -29,7 +29,7 @@ export function StatusChip({ status }: { status: string }) {
 export function ScoreBadge({ score }: { score: number | null }) {
   const s = score ?? 0;
   const tone = s >= 75 ? "bg-gradient-primary text-primary-foreground" : s >= 50 ? "bg-warning/20 text-warning" : "bg-muted text-muted-foreground";
-  return <span className={cn("rounded-lg px-2 py-1 font-display text-sm font-bold tabular-nums", tone)}>{s}</span>;
+  return <span className={cn("inline-flex size-10 shrink-0 items-center justify-center rounded-full font-display text-sm font-bold tabular-nums", tone)}>{s}</span>;
 }
 
 export function ErrorState({ message, onRetry }: { message?: string | null; onRetry?: () => void }) {
@@ -60,8 +60,8 @@ export function EmptyState({ icon, title, body }: { icon: ReactNode; title: stri
 
 export function PageHeader({ title, sub, right }: { title: string; sub?: string | undefined; right?: ReactNode }) {
   return (
-    <header className="mb-6 flex items-end justify-between gap-3">
-      <div>
+    <header className="mb-6 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 sm:flex sm:justify-between">
+      <div className="min-w-0">
         <h1 className="text-2xl font-semibold">{title}</h1>
         {sub && <p className="mt-1 text-sm text-muted-foreground">{sub}</p>}
       </div>
