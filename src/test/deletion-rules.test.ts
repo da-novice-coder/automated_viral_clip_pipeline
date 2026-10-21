@@ -44,7 +44,7 @@ describe("Deletion rules against the actual migrations", () => {
     expect((await db.query("SELECT status FROM clip_candidates")).rows[0]).toEqual({ status: "rendered" });
   });
   it("does not expose another user's clip to deletion", async () => {
-    await db.exec(`SET ROLE authenticated; DELETE FROM clips WHERE id = '${clip}' AND user_id = '00000000-0000-4000-8000-000000000099'; RESET ROLE;`);
+    await db.exec(`UPDATE clips SET user_id = '00000000-0000-4000-8000-000000000099' WHERE id = '${clip}'; SET ROLE authenticated; DELETE FROM clips WHERE id = '${clip}'; RESET ROLE;`);
     expect((await db.query("SELECT count(*)::int AS count FROM clips")).rows[0]).toEqual({ count: 1 });
   });
 });
