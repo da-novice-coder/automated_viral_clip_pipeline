@@ -105,8 +105,8 @@ function Dashboard() {
           <Button type="submit" variant="hero" className="h-11" disabled={busy || !url.trim()}>
             {busy ? "Adding…" : "Add video"}
           </Button>
-          <Button type="button" variant="soft" className="h-11" disabled title="Coming soon">
-            <Upload /> Upload · Soon
+          <Button type="button" variant="soft" className="h-11" disabled>
+            <Upload /> Upload
           </Button>
         </div>
       </form>
