@@ -241,6 +241,8 @@ function TranscriptStep({ videoId, status, isDirect, onCreated }: { videoId: str
 }
 
 function SuggestionsStep({ videoId }: { videoId: string }) {
+  const qc = useQueryClient();
+  const [submitting, setSubmitting] = useState<string | null>(null);
   const q = useQuery({
     queryKey: ["candidates", videoId],
     queryFn: async () => {
@@ -257,6 +259,7 @@ function SuggestionsStep({ videoId }: { videoId: string }) {
   async function setStatus(id: string, status: "approved" | "rejected") {
     const { error } = await supabase.from("clip_candidates").update({ status }).eq("id", id);
     if (error) toast.error(friendlyError(error.message));
+    else void qc.invalidateQueries({ queryKey: ["candidates", videoId] });
     return !error;
   }
 
@@ -273,42 +276,45 @@ function SuggestionsStep({ videoId }: { videoId: string }) {
         Render all approved ({approved.length})
       </Button>
       {items.map((c) => (
-        <article key={c.id} className={cn("rounded-2xl border bg-card p-4", c.status === "rejected" && "opacity-50")}>
-          <div className="flex items-start justify-between gap-3">
+        <article key={c.id} className={cn("min-w-0 overflow-hidden rounded-xl border bg-card p-4", c.status === "rejected" && "opacity-50")}>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
             <div className="min-w-0">
-              <p className="font-semibold leading-snug">{c.title}</p>
+              <p className="break-words font-semibold leading-snug [overflow-wrap:anywhere]">{c.title}</p>
               <p className="mt-1 text-xs tabular-nums text-muted-foreground">
                 {fmtTime(c.start_s)} – {fmtTime(c.end_s)} · {Math.round(c.end_s - c.start_s)}s · {c.source === "ai" ? "AI" : "Manual"}
               </p>
             </div>
             {c.source === "ai" && <ScoreBadge score={c.score} />}
           </div>
-          {c.reason && <p className="mt-2 text-sm text-muted-foreground">{c.reason}</p>}
-          <div className="mt-3 flex items-center gap-2">
-            <StatusChip status={c.status} />
-            <div className="ml-auto flex gap-2">
-              {(c.status === "suggested" || c.status === "approved" || c.status === "failed" || c.status === "rejected") && (
-                <>
-                  {c.status !== "rejected" && (
-                    <Button size="sm" variant="soft" onClick={() => void setStatus(c.id, "rejected")}>
-                      <X /> Reject
-                    </Button>
-                  )}
+          {c.reason && <p className="mt-2 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">{c.reason}</p>}
+          <div className="mt-4 flex flex-col gap-3">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <StatusChip status={c.status} />
+              {["suggested", "approved", "failed"].includes(c.status) && (
+                <Button size="sm" variant="soft" className="shrink-0" disabled={submitting === c.id} onClick={() => void setStatus(c.id, "rejected")}><X /> Reject</Button>
+              )}
+            </div>
+              {["suggested", "approved", "failed", "rejected"].includes(c.status) && (
                   <Button
                     size="sm"
                     variant="hero"
+                    className="h-auto min-h-12 w-full min-w-0 px-3 py-3"
+                    disabled={submitting === c.id}
                     onClick={async () => {
-                      if (await setStatus(c.id, "approved")) {
-                        enqueueRender([c.id]);
-                        toast.success("Queued for rendering");
+                      setSubmitting(c.id);
+                      try {
+                        if (await setStatus(c.id, "approved")) {
+                          enqueueRender([c.id]);
+                          toast.success("Queued for rendering");
+                        }
+                      } finally {
+                        setSubmitting(null);
                       }
                     }}
                   >
-                    <Check /> {c.status === "failed" ? "Retry" : "Approve & render"}
+                    <Check /> {c.status === "failed" ? "Re-render" : "Approve & render"}
                   </Button>
-                </>
               )}
-            </div>
           </div>
           {c.status === "failed" && c.error && <p className="mt-2 text-xs text-destructive">{friendlyError(c.error)}</p>}
         </article>

@@ -17,12 +17,19 @@ export function enqueueRender(ids: string[]) {
   void drain();
 }
 
+export function cancelPendingRenders(ids: string[]) {
+  for (let i = pending.length - 1; i >= (running ? 1 : 0); i--) {
+    if (ids.includes(pending[i] ?? "")) pending.splice(i, 1);
+  }
+}
+
 async function drain() {
   if (running || !runner) return;
   running = true;
   try {
     while (pending.length) {
-      const id = pending[0]!;
+      const id = pending[0];
+      if (!id) break;
       try {
         const r = await runner(id);
         if (!r.ok) toast.error(friendlyError(r.error));
