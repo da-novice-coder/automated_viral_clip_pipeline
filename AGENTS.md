@@ -16,3 +16,4 @@
 - Bearer token is attached by the client function middleware in `src/start.ts` — needed for protected server functions.
 - Video and clip deletions use browser Supabase RLS; database FK cascades and the clip-delete trigger keep related data changes atomic.
 - ClipCard owns confirmed deletion and invalidates clip/candidate queries so both clip surfaces share the same behavior.
+- Cancel waiting browser render jobs after video deletion; active jobs cannot be cancelled by the current compute contract.
