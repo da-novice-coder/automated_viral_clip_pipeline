@@ -161,6 +161,61 @@ export const processVideo = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+export const refetchTranscript = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ videoId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const sb = context.supabase;
+    const { data: v, error } = await sb.from("videos").select("*").eq("id", data.videoId).single();
+    if (error) throw new Error(error.message);
+    await sb.from("videos").update({ status: "transcribing", error: null }).eq("id", v.id);
+    try {
+      const tr = await computeFetch<TranscriptResponse>("/transcript", {
+        method: "POST",
+        body: { url: v.source_url },
+        timeoutMs: 180_000,
+      });
+      if (!Array.isArray(tr.segments) || !tr.segments.length) throw new Error("No speech was found in this video.");
+      await sb.from("transcripts").upsert({
+        video_id: v.id,
+        user_id: context.userId,
+        language: tr.language ?? null,
+        available_langs: (tr.availableLangs ?? []) as unknown as Json,
+        language_matches: tr.matchesRequested ?? null,
+        segments: tr.segments as unknown as Json,
+      });
+      // Replace only suggestions that are not rendered; keep rendered clips and their suggestions.
+      const { error: delErr } = await sb
+        .from("clip_candidates")
+        .delete()
+        .eq("video_id", v.id)
+        .neq("status", "rendered");
+      if (delErr) throw new Error(delErr.message);
+      const clips = await scoreWithAI(tr.segments, tr.language);
+      if (clips.length) {
+        const { error: insErr } = await sb.from("clip_candidates").insert(
+          clips.map((c) => ({
+            video_id: v.id,
+            user_id: context.userId,
+            start_s: c.start,
+            end_s: c.end,
+            title: c.title.slice(0, 80),
+            score: Math.max(0, Math.min(100, Math.round(c.score))),
+            reason: c.reason.slice(0, 240),
+            source: "ai",
+            status: "suggested",
+          })),
+        );
+        if (insErr) throw new Error(insErr.message);
+      }
+      await sb.from("videos").update({ status: "ready", error: null }).eq("id", v.id);
+      return { ok: true as const, count: clips.length, language: tr.language ?? null, matches: tr.matchesRequested ?? null };
+    } catch (e) {
+      await sb.from("videos").update({ status: "failed", error: errMsg(e).slice(0, 500) }).eq("id", v.id);
+      return { ok: false as const, error: errMsg(e) };
+    }
+  });
+
 export const createManualCandidate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) =>
