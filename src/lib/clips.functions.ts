@@ -105,13 +105,13 @@ export const scoreClips = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: t, error } = await context.supabase
       .from("transcripts")
-      .select("segments")
+      .select("segments,language")
       .eq("video_id", data.videoId)
       .maybeSingle();
     if (error) throw new Error(error.message);
     const segments = (t?.segments ?? []) as unknown as Segment[];
     if (!segments.length) throw new Error("No transcript available for suggestions.");
-    const clips = await scoreWithAI(segments);
+    const clips = await scoreWithAI(segments, t?.language);
     if (!clips.length) return { count: 0 };
     const { error: insErr } = await context.supabase.from("clip_candidates").insert(
       clips.map((c) => ({
@@ -149,6 +149,8 @@ export const processVideo = createServerFn({ method: "POST" })
         video_id: v.id,
         user_id: context.userId,
         language: tr.language ?? null,
+        available_langs: (tr.availableLangs ?? []) as unknown as Json,
+        language_matches: tr.matchesRequested ?? null,
         segments: tr.segments as unknown as Json,
       });
       await sb.from("videos").update({ status: "ready", error: null }).eq("id", v.id);
