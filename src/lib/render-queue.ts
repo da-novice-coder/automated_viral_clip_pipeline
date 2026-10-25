@@ -7,6 +7,22 @@ type Runner = (candidateId: string) => Promise<{ ok: boolean; error?: string }>;
 const pending: string[] = [];
 let running = false;
 let runner: Runner | null = null;
+const listeners = new Set<() => void>();
+let snapshot: readonly string[] = [];
+const emptySnapshot: readonly string[] = [];
+
+function notify() {
+  snapshot = [...pending];
+  listeners.forEach((listener) => listener());
+}
+
+export function subscribeRenderQueue(listener: () => void) {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+export function getRenderQueueSnapshot() { return snapshot; }
+export function getServerRenderQueueSnapshot() { return emptySnapshot; }
 
 export function setRenderRunner(fn: Runner) {
   runner = fn;
@@ -14,6 +30,7 @@ export function setRenderRunner(fn: Runner) {
 
 export function enqueueRender(ids: string[]) {
   for (const id of ids) if (!pending.includes(id)) pending.push(id);
+  notify();
   void drain();
 }
 
@@ -21,6 +38,7 @@ export function cancelPendingRenders(ids: string[]) {
   for (let i = pending.length - 1; i >= (running ? 1 : 0); i--) {
     if (ids.includes(pending[i] ?? "")) pending.splice(i, 1);
   }
+  notify();
 }
 
 async function drain() {
@@ -43,6 +61,7 @@ async function drain() {
         toast.error(friendlyError(msg));
       }
       pending.shift();
+      notify();
     }
   } finally {
     running = false;
