@@ -40,13 +40,14 @@ export const addVideo = createServerFn({ method: "POST" })
     return { id: row.id, needsProcessing: !direct };
   });
 
-async function scoreWithAI(segments: Segment[]) {
+async function scoreWithAI(segments: Segment[], language?: string | null) {
   const { generateResponse } = await import("@lovable.dev/ai-gateway");
   const lines = segments.map((s) => `[${s.start.toFixed(2)}-${s.end.toFixed(2)}] ${s.text}`).join("\n");
   const res = await generateResponse({
     model: "openai/gpt-6-astra",
     instructions:
-      "You are a short-form video editor. From the timestamped transcript, pick 5 to 10 standalone moments that would perform well as vertical clips. Each clip must be 15 to 60 seconds long. Start and end must be snapped to segment boundaries (use a segment's start and a later segment's end exactly). Give a catchy title (max 60 chars), a 0-100 hook score and a one-line reason.",
+      "You are a short-form video editor. From the timestamped transcript, pick 5 to 10 standalone moments that would perform well as vertical clips. Each clip must be 15 to 60 seconds long. Start and end must be snapped to segment boundaries (use a segment's start and a later segment's end exactly). Give a catchy title (max 60 chars), a 0-100 hook score and a one-line reason." +
+      (language ? ` The transcript is in ${language}; write every title and reason in ${language}.` : ""),
     input: lines.slice(0, 120_000),
     text: {
       format: {
