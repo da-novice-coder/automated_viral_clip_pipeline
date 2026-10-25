@@ -1,3 +1,4 @@
+- [ ] Apply and test suggestion-state consistency and reset deleted clips to Suggested.
 - [x] Fix suggestion and clip card mobile layouts and inactive Publish footer.
 - [x] Add confirmed video deletion and clip deletion with renderable suggestions.
 - [x] Test deletion rules and verify isolated clip cards at 320, 375, 768, and 1280px.
