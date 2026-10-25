@@ -1,6 +1,13 @@
 export type Segment = { start: number; end: number; text: string };
 
-export type TranscriptResponse = { videoId: string; language: string; segments: Segment[] };
+export type TranscriptResponse = {
+  videoId: string;
+  language: string;
+  segments: Segment[];
+  availableLangs?: string[];
+  requestedLanguage?: string;
+  matchesRequested?: boolean;
+};
 export type RenderResponse = {
   clipUrl: string;
   key: string;
