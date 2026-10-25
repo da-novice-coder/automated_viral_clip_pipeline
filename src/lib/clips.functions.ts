@@ -40,13 +40,14 @@ export const addVideo = createServerFn({ method: "POST" })
     return { id: row.id, needsProcessing: !direct };
   });
 
-async function scoreWithAI(segments: Segment[]) {
+async function scoreWithAI(segments: Segment[], language?: string | null) {
   const { generateResponse } = await import("@lovable.dev/ai-gateway");
   const lines = segments.map((s) => `[${s.start.toFixed(2)}-${s.end.toFixed(2)}] ${s.text}`).join("\n");
   const res = await generateResponse({
     model: "openai/gpt-6-astra",
     instructions:
-      "You are a short-form video editor. From the timestamped transcript, pick 5 to 10 standalone moments that would perform well as vertical clips. Each clip must be 15 to 60 seconds long. Start and end must be snapped to segment boundaries (use a segment's start and a later segment's end exactly). Give a catchy title (max 60 chars), a 0-100 hook score and a one-line reason.",
+      "You are a short-form video editor. From the timestamped transcript, pick 5 to 10 standalone moments that would perform well as vertical clips. Each clip must be 15 to 60 seconds long. Start and end must be snapped to segment boundaries (use a segment's start and a later segment's end exactly). Give a catchy title (max 60 chars), a 0-100 hook score and a one-line reason." +
+      (language ? ` The transcript is in ${language}; write every title and reason in ${language}.` : ""),
     input: lines.slice(0, 120_000),
     text: {
       format: {
@@ -104,13 +105,13 @@ export const scoreClips = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: t, error } = await context.supabase
       .from("transcripts")
-      .select("segments")
+      .select("segments,language")
       .eq("video_id", data.videoId)
       .maybeSingle();
     if (error) throw new Error(error.message);
     const segments = (t?.segments ?? []) as unknown as Segment[];
     if (!segments.length) throw new Error("No transcript available for suggestions.");
-    const clips = await scoreWithAI(segments);
+    const clips = await scoreWithAI(segments, t?.language);
     if (!clips.length) return { count: 0 };
     const { error: insErr } = await context.supabase.from("clip_candidates").insert(
       clips.map((c) => ({
@@ -148,6 +149,8 @@ export const processVideo = createServerFn({ method: "POST" })
         video_id: v.id,
         user_id: context.userId,
         language: tr.language ?? null,
+        available_langs: (tr.availableLangs ?? []) as unknown as Json,
+        language_matches: tr.matchesRequested ?? null,
         segments: tr.segments as unknown as Json,
       });
       await sb.from("videos").update({ status: "ready", error: null }).eq("id", v.id);
@@ -156,6 +159,61 @@ export const processVideo = createServerFn({ method: "POST" })
       return { ok: false as const, error: errMsg(e) };
     }
     return { ok: true as const };
+  });
+
+export const refetchTranscript = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ videoId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const sb = context.supabase;
+    const { data: v, error } = await sb.from("videos").select("*").eq("id", data.videoId).single();
+    if (error) throw new Error(error.message);
+    await sb.from("videos").update({ status: "transcribing", error: null }).eq("id", v.id);
+    try {
+      const tr = await computeFetch<TranscriptResponse>("/transcript", {
+        method: "POST",
+        body: { url: v.source_url },
+        timeoutMs: 180_000,
+      });
+      if (!Array.isArray(tr.segments) || !tr.segments.length) throw new Error("No speech was found in this video.");
+      await sb.from("transcripts").upsert({
+        video_id: v.id,
+        user_id: context.userId,
+        language: tr.language ?? null,
+        available_langs: (tr.availableLangs ?? []) as unknown as Json,
+        language_matches: tr.matchesRequested ?? null,
+        segments: tr.segments as unknown as Json,
+      });
+      // Replace only suggestions that are not rendered; keep rendered clips and their suggestions.
+      const { error: delErr } = await sb
+        .from("clip_candidates")
+        .delete()
+        .eq("video_id", v.id)
+        .neq("status", "rendered");
+      if (delErr) throw new Error(delErr.message);
+      const clips = await scoreWithAI(tr.segments, tr.language);
+      if (clips.length) {
+        const { error: insErr } = await sb.from("clip_candidates").insert(
+          clips.map((c) => ({
+            video_id: v.id,
+            user_id: context.userId,
+            start_s: c.start,
+            end_s: c.end,
+            title: c.title.slice(0, 80),
+            score: Math.max(0, Math.min(100, Math.round(c.score))),
+            reason: c.reason.slice(0, 240),
+            source: "ai",
+            status: "suggested",
+          })),
+        );
+        if (insErr) throw new Error(insErr.message);
+      }
+      await sb.from("videos").update({ status: "ready", error: null }).eq("id", v.id);
+      return { ok: true as const, count: clips.length, language: tr.language ?? null, matches: tr.matchesRequested ?? null };
+    } catch (e) {
+      await sb.from("videos").update({ status: "failed", error: errMsg(e).slice(0, 500) }).eq("id", v.id);
+      return { ok: false as const, error: errMsg(e) };
+    }
   });
 
 export const createManualCandidate = createServerFn({ method: "POST" })

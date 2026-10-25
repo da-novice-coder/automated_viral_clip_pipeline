@@ -129,22 +129,28 @@ export type Database = {
       }
       transcripts: {
         Row: {
+          available_langs: Json
           created_at: string
           language: string | null
+          language_matches: boolean | null
           segments: Json
           user_id: string
           video_id: string
         }
         Insert: {
+          available_langs?: Json
           created_at?: string
           language?: string | null
+          language_matches?: boolean | null
           segments?: Json
           user_id?: string
           video_id: string
         }
         Update: {
+          available_langs?: Json
           created_at?: string
           language?: string | null
+          language_matches?: boolean | null
           segments?: Json
           user_id?: string
           video_id?: string
