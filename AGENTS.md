@@ -17,3 +17,4 @@
 - Video and clip deletions use browser Supabase RLS; database FK cascades and the clip-delete trigger keep related data changes atomic.
 - ClipCard owns confirmed deletion and invalidates clip/candidate queries so both clip surfaces share the same behavior.
 - Cancel waiting browser render jobs after video deletion; active jobs cannot be cancelled by the current compute contract.
+- Suggestion action eligibility lives in `src/lib/suggestion-state.ts`; cards subscribe to the browser render queue so waiting jobs cannot display stale render actions.

@@ -34,10 +34,10 @@ describe("Deletion rules against the actual migrations", () => {
     );
     expect(result.rows[0]).toEqual({ videos: 0, transcripts: 0, candidates: 0, clips: 0 });
   });
-  it("deleting a clip restores its original suggestion to Approved with the same render range", async () => {
+  it("deleting a clip restores its original suggestion to Suggested with the same render range", async () => {
     await db.exec(`UPDATE clip_candidates SET error = 'old error' WHERE id = '${candidate}'; DELETE FROM clips WHERE id = '${clip}';`);
     const result = await db.query("SELECT status,error,start_s,end_s,video_id FROM clip_candidates");
-    expect(result.rows[0]).toEqual({ status: "approved", error: null, start_s: 0, end_s: 30, video_id: video });
+    expect(result.rows[0]).toEqual({ status: "suggested", error: null, start_s: 0, end_s: 30, video_id: video });
   });
   it("retains Rendered while another copy remains", async () => {
     await db.exec(`INSERT INTO clips (candidate_id,video_id,clip_url) VALUES ('${candidate}','${video}','https://example.com/other.mp4'); DELETE FROM clips WHERE id = '${clip}';`);

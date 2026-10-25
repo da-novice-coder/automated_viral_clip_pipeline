@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Clapperboard, Search, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Check, Clapperboard, RotateCw, Search, Sparkles, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { createManualCandidate } from "@/lib/clips.functions";
-import { enqueueRender } from "@/lib/render-queue";
+import { enqueueRender, getRenderQueueSnapshot, getServerRenderQueueSnapshot, subscribeRenderQueue } from "@/lib/render-queue";
+import { suggestionState } from "@/lib/suggestion-state";
 import { fmtTime, friendlyError, MAX_CLIP_SECONDS, type Segment } from "@/lib/types";
 import { useRealtime } from "@/hooks/use-realtime";
 import { usePipeline } from "@/hooks/use-pipeline";
@@ -243,6 +244,7 @@ function TranscriptStep({ videoId, status, isDirect, onCreated }: { videoId: str
 function SuggestionsStep({ videoId }: { videoId: string }) {
   const qc = useQueryClient();
   const [submitting, setSubmitting] = useState<string | null>(null);
+  const queued = useSyncExternalStore(subscribeRenderQueue, getRenderQueueSnapshot, getServerRenderQueueSnapshot);
   const q = useQuery({
     queryKey: ["candidates", videoId],
     queryFn: async () => {
@@ -275,7 +277,9 @@ function SuggestionsStep({ videoId }: { videoId: string }) {
       <Button variant="hero" className="h-11 w-full" disabled={!approved.length} onClick={() => { enqueueRender(approved.map((c) => c.id)); toast.success(`${approved.length} clip(s) queued`); }}>
         Render all approved ({approved.length})
       </Button>
-      {items.map((c) => (
+      {items.map((c) => {
+        const state = suggestionState(c.status, queued.includes(c.id));
+        return (
         <article key={c.id} className={cn("min-w-0 overflow-hidden rounded-xl border bg-card p-4", c.status === "rejected" && "opacity-50")}>
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
             <div className="min-w-0">
@@ -289,21 +293,21 @@ function SuggestionsStep({ videoId }: { videoId: string }) {
           {c.reason && <p className="mt-2 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">{c.reason}</p>}
           <div className="mt-4 flex flex-col gap-3">
             <div className="flex min-w-0 items-center justify-between gap-2">
-              <StatusChip status={c.status} />
-              {["suggested", "approved", "failed"].includes(c.status) && (
+              <StatusChip status={state.displayStatus} />
+              {state.canReject && (
                 <Button size="sm" variant="soft" className="shrink-0" disabled={submitting === c.id} onClick={() => void setStatus(c.id, "rejected")}><X /> Reject</Button>
               )}
             </div>
-              {["suggested", "approved", "failed", "rejected"].includes(c.status) && (
+              {state.renderAction && (
                   <Button
                     size="sm"
-                    variant="hero"
+                    variant={state.renderAction === "rerender" ? "secondary" : "hero"}
                     className="h-auto min-h-12 w-full min-w-0 px-3 py-3"
                     disabled={submitting === c.id}
                     onClick={async () => {
                       setSubmitting(c.id);
                       try {
-                        if (await setStatus(c.id, "approved")) {
+                        if (state.renderAction !== "approve" || await setStatus(c.id, "approved")) {
                           enqueueRender([c.id]);
                           toast.success("Queued for rendering");
                         }
@@ -312,13 +316,15 @@ function SuggestionsStep({ videoId }: { videoId: string }) {
                       }
                     }}
                   >
-                    <Check /> {c.status === "failed" ? "Re-render" : "Approve & render"}
+                    {state.renderAction === "approve" ? <Check /> : <RotateCw />}
+                    {state.renderAction === "approve" ? "Approve & render" : state.renderAction === "rerender" ? "Re-render" : "Retry render"}
                   </Button>
               )}
           </div>
-          {c.status === "failed" && c.error && <p className="mt-2 text-xs text-destructive">{friendlyError(c.error)}</p>}
+          {state.displayStatus === "failed" && c.error && <p className="mt-2 text-xs text-destructive">{friendlyError(c.error)}</p>}
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }
