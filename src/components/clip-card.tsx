@@ -9,6 +9,7 @@ export type ClipRow = {
   clip_url: string;
   duration_s: number | null;
   created_at: string;
+  captions_burned?: boolean | null;
 };
 
 export function ClipCard({ clip, onDelete }: { clip: ClipRow; onDelete?: (id: string) => void }) {
@@ -20,7 +21,12 @@ export function ClipCard({ clip, onDelete }: { clip: ClipRow; onDelete?: (id: st
       <div className="space-y-3 p-3">
         <div>
           <p className="line-clamp-2 text-sm font-semibold">{clip.title ?? "Clip"}</p>
-          <p className="text-xs text-muted-foreground">{fmtTime(clip.duration_s ?? 0)}</p>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {fmtTime(clip.duration_s ?? 0)}
+            {clip.captions_burned && (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">CC</span>
+            )}
+          </p>
         </div>
         <div className="grid grid-cols-3 gap-1.5">
           <Button

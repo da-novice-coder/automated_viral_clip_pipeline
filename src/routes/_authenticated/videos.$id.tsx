@@ -1,20 +1,24 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Clapperboard, Search, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Check, Clapperboard, MoreVertical, RotateCw, Search, Sparkles, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { createManualCandidate } from "@/lib/clips.functions";
+import { createManualCandidate, refetchTranscript, scoreClips } from "@/lib/clips.functions";
 import { enqueueRender } from "@/lib/render-queue";
-import { fmtTime, friendlyError, MAX_CLIP_SECONDS, type Segment } from "@/lib/types";
+import { fmtTime, friendlyError, langLabel, MAX_CLIP_SECONDS, type Segment } from "@/lib/types";
 import { useRealtime } from "@/hooks/use-realtime";
 import { usePipeline } from "@/hooks/use-pipeline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, ErrorState, ScoreBadge, StatusChip } from "@/components/app-ui";
+import { Switch } from "@/components/ui/switch";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { EmptyState, ErrorState, LanguageChip, StatusChip } from "@/components/app-ui";
 import { ClipCard } from "@/components/clip-card";
+import { SuggestionCard } from "@/components/suggestion-card";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/videos/$id")({
@@ -37,6 +41,10 @@ function VideoDetail() {
   const { id } = Route.useParams();
   const [step, setStep] = useState<Step>("transcript");
   const { run } = usePipeline();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const refetch = useServerFn(refetchTranscript);
+  const [refetching, setRefetching] = useState(false);
   useRealtime(["videos", "clip_candidates", "clips"], [["video", id], ["candidates", id], ["vclips", id]]);
 
   const video = useQuery({
@@ -48,11 +56,67 @@ function VideoDetail() {
     },
   });
 
+  const transcript = useQuery({
+    queryKey: ["video-transcript", id, video.data?.status],
+    enabled: Boolean(video.data),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("transcripts").select("language,language_matches").eq("video_id", id).maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const steps: { k: Step; label: string }[] = [
     { k: "transcript", label: "Transcript" },
     { k: "suggestions", label: "Suggestions" },
     { k: "clips", label: "Clips" },
   ];
+
+  async function redoTranscript() {
+    setRefetching(true);
+    try {
+      const r = await refetch({ data: { videoId: id } });
+      if (!r.ok) {
+        toast.error(friendlyError(r.error));
+        return;
+      }
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["video-transcript", id] }),
+        qc.invalidateQueries({ queryKey: ["transcript", id] }),
+        qc.invalidateQueries({ queryKey: ["candidates", id] }),
+        qc.invalidateQueries({ queryKey: ["video", id] }),
+      ]);
+      if (r.error) toast.error(friendlyError(r.error));
+      else toast.success(`${r.count} clip suggestions ready`);
+    } catch (e) {
+      toast.error(friendlyError(e instanceof Error ? e.message : String(e)));
+    } finally {
+      setRefetching(false);
+    }
+  }
+
+  async function continueAnyway() {
+    const { error } = await supabase.from("transcripts").update({ language_matches: true }).eq("video_id", id);
+    if (error) {
+      toast.error(friendlyError(error.message));
+      return;
+    }
+    await qc.invalidateQueries({ queryKey: ["video-transcript", id] });
+  }
+
+  async function deleteVideo() {
+    if (!confirm("Delete this video and all of its clips?")) return;
+    const { error } = await supabase.from("videos").delete().eq("id", id);
+    if (error) {
+      toast.error(friendlyError(error.message));
+      return;
+    }
+    toast.success("Video deleted");
+    void qc.invalidateQueries({ queryKey: ["videos"] });
+    void navigate({ to: "/dashboard" });
+  }
+
+  const mismatched = transcript.data?.language_matches === false;
 
   return (
     <>
@@ -66,10 +130,40 @@ function VideoDetail() {
       ) : (
         video.data && (
           <div className="mb-5">
-            <h1 className="line-clamp-2 text-xl font-semibold">{video.data.title}</h1>
-            <div className="mt-2">
-              <StatusChip status={video.data.status} />
+            <div className="flex items-start justify-between gap-3">
+              <h1 className="line-clamp-2 text-xl font-semibold">{video.data.title}</h1>
+              {video.data.youtube_id && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon" variant="soft" aria-label="Video actions">
+                      <MoreVertical />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem disabled={refetching} onSelect={() => void redoTranscript()}>
+                      <RotateCw /> Re-fetch transcript
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
+            <div className="mt-2 flex items-center gap-2">
+              <StatusChip status={video.data.status} />
+              <LanguageChip language={transcript.data?.language} />
+            </div>
+            {mismatched && (
+              <div className="mt-3 rounded-2xl border border-warning/40 bg-warning/10 p-3 text-sm">
+                <p>No English captions found. The transcript is in {langLabel(transcript.data?.language) || "another language"}.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" variant="soft" onClick={() => void continueAnyway()}>
+                    Continue anyway
+                  </Button>
+                  <Button size="sm" variant="soft" onClick={() => void deleteVideo()}>
+                    Delete video
+                  </Button>
+                </div>
+              </div>
+            )}
             {video.data.status === "failed" && (
               <div className="mt-3">
                 <ErrorState message={video.data.error} onRetry={() => void run(id)} />
@@ -99,9 +193,20 @@ function VideoDetail() {
       {video.data && step === "transcript" && (
         <TranscriptStep videoId={id} status={video.data.status} isDirect={!video.data.youtube_id} onCreated={() => setStep("clips")} />
       )}
-      {step === "suggestions" && <SuggestionsStep videoId={id} />}
+      {video.data && step === "suggestions" && <SuggestionsStep videoId={id} error={video.data.error} />}
       {step === "clips" && <ClipsStep videoId={id} />}
     </>
+  );
+}
+
+function CaptionsSwitch({ id, checked, onChange }: { id: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border bg-card p-3">
+      <Label htmlFor={id} className="font-semibold">
+        Captions
+      </Label>
+      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+    </div>
   );
 }
 
@@ -112,6 +217,7 @@ function TranscriptStep({ videoId, status, isDirect, onCreated }: { videoId: str
   const [title, setTitle] = useState("");
   const [manualS, setManualS] = useState("0");
   const [manualE, setManualE] = useState("30");
+  const [captionsOn, setCaptionsOn] = useState(true);
   const create = useServerFn(createManualCandidate);
   const qc = useQueryClient();
 
@@ -142,10 +248,10 @@ function TranscriptStep({ videoId, status, isDirect, onCreated }: { videoId: str
     } else setEnd(i);
   }
 
-  async function submit(s: number, e: number) {
+  async function submit(s: number, e: number, captions: boolean) {
     try {
       const r = await create({ data: { videoId, start: s, end: e, title: title || undefined } });
-      enqueueRender([r.id]);
+      enqueueRender([r.id], { captions });
       toast.success("Clip queued for rendering");
       setStart(null);
       setEnd(null);
@@ -170,7 +276,7 @@ function TranscriptStep({ videoId, status, isDirect, onCreated }: { videoId: str
         </div>
         <Input placeholder="Clip title (optional)" value={title} onChange={(ev) => setTitle(ev.target.value)} className="h-11" />
         {!valid && <p className="text-xs text-destructive">End must be after start, max {MAX_CLIP_SECONDS} seconds.</p>}
-        <Button variant="hero" className="h-11 w-full" disabled={!valid} onClick={() => void submit(s, e)}>
+        <Button variant="hero" className="h-11 w-full" disabled={!valid} onClick={() => void submit(s, e, false)}>
           Create clip
         </Button>
       </div>
@@ -229,7 +335,13 @@ function TranscriptStep({ videoId, status, isDirect, onCreated }: { videoId: str
           ) : (
             <>
               <Input placeholder="Clip title (optional)" value={title} onChange={(e) => setTitle(e.target.value)} className="h-10" />
-              <Button variant="hero" className="h-11 w-full" onClick={() => void submit(range.s, range.e)}>
+              <div className="flex items-center justify-between gap-3 rounded-xl border p-2.5">
+                <Label htmlFor="manual-captions" className="text-xs font-semibold">
+                  Captions
+                </Label>
+                <Switch id="manual-captions" checked={captionsOn} onCheckedChange={setCaptionsOn} />
+              </div>
+              <Button variant="hero" className="h-11 w-full" onClick={() => void submit(range.s, range.e, captionsOn)}>
                 Create clip
               </Button>
             </>
@@ -240,7 +352,13 @@ function TranscriptStep({ videoId, status, isDirect, onCreated }: { videoId: str
   );
 }
 
-function SuggestionsStep({ videoId }: { videoId: string }) {
+function SuggestionsStep({ videoId, error }: { videoId: string; error: string | null }) {
+  const [captionsOn, setCaptionsOn] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const score = useServerFn(scoreClips);
+  const qc = useQueryClient();
+
   const q = useQuery({
     queryKey: ["candidates", videoId],
     queryFn: async () => {
@@ -254,64 +372,68 @@ function SuggestionsStep({ videoId }: { videoId: string }) {
     },
   });
 
-  async function setStatus(id: string, status: "approved" | "rejected") {
-    const { error } = await supabase.from("clip_candidates").update({ status }).eq("id", id);
-    if (error) toast.error(friendlyError(error.message));
-    return !error;
+  const t = useQuery({
+    queryKey: ["transcript-segments", videoId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("transcripts").select("segments").eq("video_id", videoId).maybeSingle();
+      if (error) throw error;
+      return (data?.segments ?? []) as unknown as Segment[];
+    },
+  });
+  const hasTranscript = (t.data?.length ?? 0) > 0;
+
+  async function generate() {
+    setGenerating(true);
+    setLocalError(null);
+    try {
+      const r = await score({ data: { videoId } });
+      setLocalError(r.error);
+      if (r.error) toast.error(friendlyError(r.error));
+      else toast.success(`${r.count} clip suggestions ready`);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["candidates", videoId] }),
+        qc.invalidateQueries({ queryKey: ["video", videoId] }),
+      ]);
+    } catch (e) {
+      toast.error(friendlyError(e instanceof Error ? e.message : String(e)));
+    } finally {
+      setGenerating(false);
+    }
   }
 
   if (q.isLoading) return <div className="space-y-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}</div>;
   if (q.isError) return <ErrorState message={(q.error as Error).message} onRetry={() => void q.refetch()} />;
   const items = q.data ?? [];
-  const approved = items.filter((c) => c.status === "approved");
-  if (!items.length)
-    return <EmptyState icon={<Sparkles className="size-8" />} title="No suggestions yet" body="AI suggestions appear here once the transcript is ready." />;
+  const shownError = localError ?? error;
 
+  if (!items.length)
+    return (
+      <div className="space-y-3">
+        <EmptyState icon={<Sparkles className="size-8" />} title="No suggestions yet" body="Generate suggestions from this video's saved transcript." />
+        {shownError && <ErrorState message={shownError} />}
+        <Button variant="hero" className="h-11 w-full" disabled={generating} onClick={() => void generate()}>
+          <Sparkles /> {generating ? "Generating…" : "Generate suggestions"}
+        </Button>
+      </div>
+    );
+
+  const approved = items.filter((c) => c.status === "approved");
   return (
     <div className="space-y-3">
-      <Button variant="hero" className="h-11 w-full" disabled={!approved.length} onClick={() => { enqueueRender(approved.map((c) => c.id)); toast.success(`${approved.length} clip(s) queued`); }}>
+      {hasTranscript && <CaptionsSwitch id="suggestions-captions" checked={captionsOn} onChange={setCaptionsOn} />}
+      <Button
+        variant="hero"
+        className="h-11 w-full"
+        disabled={!approved.length}
+        onClick={() => {
+          enqueueRender(approved.map((c) => c.id), { captions: hasTranscript && captionsOn });
+          toast.success(`${approved.length} clip(s) queued`);
+        }}
+      >
         Render all approved ({approved.length})
       </Button>
       {items.map((c) => (
-        <article key={c.id} className={cn("rounded-2xl border bg-card p-4", c.status === "rejected" && "opacity-50")}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-semibold leading-snug">{c.title}</p>
-              <p className="mt-1 text-xs tabular-nums text-muted-foreground">
-                {fmtTime(c.start_s)} – {fmtTime(c.end_s)} · {Math.round(c.end_s - c.start_s)}s · {c.source === "ai" ? "AI" : "Manual"}
-              </p>
-            </div>
-            {c.source === "ai" && <ScoreBadge score={c.score} />}
-          </div>
-          {c.reason && <p className="mt-2 text-sm text-muted-foreground">{c.reason}</p>}
-          <div className="mt-3 flex items-center gap-2">
-            <StatusChip status={c.status} />
-            <div className="ml-auto flex gap-2">
-              {(c.status === "suggested" || c.status === "approved" || c.status === "failed" || c.status === "rejected") && (
-                <>
-                  {c.status !== "rejected" && (
-                    <Button size="sm" variant="soft" onClick={() => void setStatus(c.id, "rejected")}>
-                      <X /> Reject
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="hero"
-                    onClick={async () => {
-                      if (await setStatus(c.id, "approved")) {
-                        enqueueRender([c.id]);
-                        toast.success("Queued for rendering");
-                      }
-                    }}
-                  >
-                    <Check /> {c.status === "failed" ? "Retry" : "Approve & render"}
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-          {c.status === "failed" && c.error && <p className="mt-2 text-xs text-destructive">{friendlyError(c.error)}</p>}
-        </article>
+        <SuggestionCard key={c.id} candidate={c} captionsOn={hasTranscript && captionsOn} />
       ))}
     </div>
   );

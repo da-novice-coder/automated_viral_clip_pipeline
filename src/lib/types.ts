@@ -1,12 +1,21 @@
 export type Segment = { start: number; end: number; text: string };
 
-export type TranscriptResponse = { videoId: string; language: string; segments: Segment[] };
+export type TranscriptResponse = {
+  videoId: string;
+  language: string;
+  segments: Segment[];
+  availableLangs?: string[];
+  requestedLanguage?: string;
+  matchesRequested?: boolean;
+};
 export type RenderResponse = {
   clipUrl: string;
   key: string;
   bytes: number;
   durationSec: number;
   format: string;
+  captionsBurned?: boolean;
+  captionCount?: number;
 };
 export type HealthResult = { ok: boolean; status: number; detail: string };
 
@@ -53,6 +62,13 @@ export function fmtTime(s: number): string {
   const sec = t % 60;
   const mm = h ? String(m).padStart(2, "0") : String(m);
   return `${h ? h + ":" : ""}${mm}:${String(sec).padStart(2, "0")}`;
+}
+
+/** Short label for a transcript language code, e.g. "en" → "EN". */
+export function langLabel(language: string | null | undefined): string {
+  const lang = (language ?? "").trim();
+  if (!lang) return "";
+  return lang.length <= 3 ? lang.toUpperCase() : lang.charAt(0).toUpperCase() + lang.slice(1);
 }
 
 export function friendlyError(msg: string | null | undefined): string {

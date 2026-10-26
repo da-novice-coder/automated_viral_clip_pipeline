@@ -74,6 +74,7 @@ export type Database = {
         Row: {
           bytes: number | null
           candidate_id: string | null
+          captions_burned: boolean | null
           clip_url: string
           created_at: string
           duration_s: number | null
@@ -87,6 +88,7 @@ export type Database = {
         Insert: {
           bytes?: number | null
           candidate_id?: string | null
+          captions_burned?: boolean | null
           clip_url: string
           created_at?: string
           duration_s?: number | null
@@ -100,6 +102,7 @@ export type Database = {
         Update: {
           bytes?: number | null
           candidate_id?: string | null
+          captions_burned?: boolean | null
           clip_url?: string
           created_at?: string
           duration_s?: number | null
@@ -129,22 +132,28 @@ export type Database = {
       }
       transcripts: {
         Row: {
+          available_langs: string[] | null
           created_at: string
           language: string | null
+          language_matches: boolean | null
           segments: Json
           user_id: string
           video_id: string
         }
         Insert: {
+          available_langs?: string[] | null
           created_at?: string
           language?: string | null
+          language_matches?: boolean | null
           segments?: Json
           user_id?: string
           video_id: string
         }
         Update: {
+          available_langs?: string[] | null
           created_at?: string
           language?: string | null
+          language_matches?: boolean | null
           segments?: Json
           user_id?: string
           video_id?: string

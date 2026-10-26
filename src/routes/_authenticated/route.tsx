@@ -25,7 +25,7 @@ const tabs = [
 function AppLayout() {
   const render = useServerFn(renderClip);
   useEffect(() => {
-    setRenderRunner((id) => render({ data: { candidateId: id } }));
+    setRenderRunner((id, opts) => render({ data: { candidateId: id, captions: opts.captions } }));
   }, [render]);
 
   return (

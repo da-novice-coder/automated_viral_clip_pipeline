@@ -1,10 +1,10 @@
 import { toast } from "sonner";
 import { friendlyError } from "./types";
 
-type Runner = (candidateId: string) => Promise<{ ok: boolean; error?: string }>;
+type Runner = (candidateId: string, opts: { captions: boolean }) => Promise<{ ok: boolean; error?: string }>;
 
 // Browser-side queue: renders strictly one clip at a time.
-const pending: string[] = [];
+const pending: { id: string; captions: boolean }[] = [];
 let running = false;
 let runner: Runner | null = null;
 
@@ -12,8 +12,9 @@ export function setRenderRunner(fn: Runner) {
   runner = fn;
 }
 
-export function enqueueRender(ids: string[]) {
-  for (const id of ids) if (!pending.includes(id)) pending.push(id);
+export function enqueueRender(ids: string[], opts: { captions?: boolean } = {}) {
+  const captions = opts.captions === true;
+  for (const id of ids) if (!pending.some((p) => p.id === id)) pending.push({ id, captions });
   void drain();
 }
 
@@ -22,9 +23,9 @@ async function drain() {
   running = true;
   try {
     while (pending.length) {
-      const id = pending[0]!;
+      const job = pending[0]!;
       try {
-        const r = await runner(id);
+        const r = await runner(job.id, { captions: job.captions });
         if (!r.ok) toast.error(friendlyError(r.error));
         else toast.success("Clip rendered");
       } catch (e) {

@@ -37,12 +37,18 @@ function ClipBank() {
 
   async function del(id: string) {
     if (!confirm("Delete this clip?")) return;
+    const candidateId = q.data?.find((c) => c.id === id)?.candidate_id ?? null;
     const { error } = await supabase.from("clips").delete().eq("id", id);
-    if (error) toast.error(friendlyError(error.message));
-    else {
-      toast.success("Clip deleted");
-      void qc.invalidateQueries({ queryKey: ["clips"] });
+    if (error) {
+      toast.error(friendlyError(error.message));
+      return;
     }
+    if (candidateId) {
+      const { error: resetErr } = await supabase.from("clip_candidates").update({ status: "suggested" }).eq("id", candidateId);
+      if (resetErr) toast.error(friendlyError(resetErr.message));
+    }
+    toast.success("Clip deleted");
+    void qc.invalidateQueries({ queryKey: ["clips"] });
   }
 
   return (

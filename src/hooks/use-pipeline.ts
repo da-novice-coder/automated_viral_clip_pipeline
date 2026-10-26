@@ -16,7 +16,8 @@ export function usePipeline() {
     toast.success("Transcript ready — finding the best moments…");
     try {
       const s = await score({ data: { videoId } });
-      toast.success(`${s.count} clip suggestions ready`);
+      if (s.error) toast.error(friendlyError(s.error));
+      else toast.success(`${s.count} clip suggestions ready`);
     } catch (e) {
       toast.error(friendlyError(e instanceof Error ? e.message : String(e)));
     }

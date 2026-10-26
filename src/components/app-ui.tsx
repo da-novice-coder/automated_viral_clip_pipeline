@@ -2,7 +2,7 @@ import { AlertTriangle, RotateCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { friendlyError } from "@/lib/types";
+import { friendlyError, langLabel } from "@/lib/types";
 
 const chip: Record<string, string> = {
   queued: "bg-muted text-muted-foreground",
@@ -16,12 +16,23 @@ const chip: Record<string, string> = {
   rendered: "bg-success/15 text-success",
 };
 
-export function StatusChip({ status }: { status: string }) {
+export function StatusChip({ status, label }: { status: string; label?: string }) {
   const live = status === "transcribing" || status === "rendering" || status === "queued";
   return (
     <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold capitalize", chip[status] ?? chip["queued"])}>
       {live && <span className="size-1.5 animate-pulse rounded-full bg-current" />}
-      {status}
+      {label ?? status}
+    </span>
+  );
+}
+
+/** Small language pill shown next to a video's status chip, e.g. "EN". */
+export function LanguageChip({ language }: { language: string | null | undefined }) {
+  const label = langLabel(language);
+  if (!label) return null;
+  return (
+    <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+      {label}
     </span>
   );
 }
