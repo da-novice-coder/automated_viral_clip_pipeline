@@ -79,8 +79,7 @@ function VideoDetail() {
     setDeleting(true);
     try {
       const { data: cands } = await supabase.from("clip_candidates").select("id").eq("video_id", id);
-      const { error } = await deleteOwnedRow(supabase, "videos", id);
-      if (error) throw error;
+      await deleteOwnedRow(supabase, "videos", id);
       cancelPendingRenders((cands ?? []).map((c) => c.id));
       toast.success("Video deleted");
       void navigate({ to: "/dashboard" });
