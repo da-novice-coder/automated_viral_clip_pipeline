@@ -1,3 +1,6 @@
+- [ ] Switch scoring to direct Gemini with validated suggestions and saved errors/retry.
+- [ ] Add optional burned-in captions to all render entry points and CC badges.
+- [ ] Test scoring, captions, queue options, and verify available UI flows.
 - [x] Apply and test suggestion-state consistency and reset deleted clips to Suggested.
 - [x] Fix suggestion and clip card mobile layouts and inactive Publish footer.
 - [x] Add confirmed video deletion and clip deletion with renderable suggestions.
