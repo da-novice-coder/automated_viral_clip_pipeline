@@ -1,10 +1,17 @@
 // Server-only Gemini client for clip suggestions. Never imported by browser code.
 import type { Segment } from "./types";
 
-/** The Gemini model used for clip suggestions — change it here only. */
-const GEMINI_MODEL = "gemini-3.5-flash";
+/**
+ * Gemini models tried in order for clip suggestions — change them here only.
+ * The last entry is an alias that always follows the current Flash release, so a
+ * retired model (404) or an overloaded one (503) switches over without a code change.
+ */
+const GEMINI_MODELS = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-flash-latest"] as const;
 
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+/** Statuses meaning "this model cannot serve the request now" — try the next one. */
+const FALLBACK_STATUSES = new Set([404, 503]);
+
+const geminiUrl = (model: string) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
 const MIN_SUGGESTION_SECONDS = 15;
 const MAX_SUGGESTION_SECONDS = 60;
@@ -56,7 +63,7 @@ function instructionBlock(language: string | null): string {
   ].join("\n");
 }
 
-function geminiError(status: number, body: string): string {
+function geminiError(model: string, status: number, body: string): string {
   let detail = "";
   try {
     detail = (JSON.parse(body) as { error?: { message?: string } }).error?.message ?? "";
@@ -68,8 +75,8 @@ function geminiError(status: number, body: string): string {
     return `Gemini rejected the request: ${detail.slice(0, 200) || "bad request"}`;
   }
   if (status === 429) return "Gemini quota exceeded. Try again in a few minutes.";
-  if (status === 404) return `Gemini model ${GEMINI_MODEL} is unavailable for this API key.`;
-  return `Gemini ${status}: ${detail.slice(0, 200) || "request failed"}`;
+  if (status === 404) return `Gemini model ${model} is unavailable for this API key.`;
+  return `Gemini ${model} failed (${status}): ${detail.slice(0, 200) || "request failed"}`;
 }
 
 function firstText(payload: unknown): string {
@@ -150,32 +157,34 @@ export function validateSuggestions(raw: unknown, segments: Segment[]): ClipSugg
   return out;
 }
 
-export async function requestClipSuggestions(segments: Segment[], language: string | null): Promise<ClipSuggestion[]> {
-  const apiKey = process.env["GEMINI_API_KEY"];
-  if (!apiKey) throw new Error("Gemini API key is missing. Add GEMINI_API_KEY in project secrets.");
+type GeminiResult = { ok: true; body: string } | { ok: false; retryable: boolean; message: string };
 
-  const transcript = segments
-    .map((s) => `[${s.start.toFixed(2)}-${s.end.toFixed(2)}] ${s.text}`)
-    .join("\n")
-    .slice(0, 120_000);
+async function callGemini(model: string, apiKey: string, prompt: string): Promise<GeminiResult> {
+  try {
+    const res = await fetch(geminiUrl(model), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA,
+          temperature: 0.4,
+        },
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
 
-  const res = await fetch(GEMINI_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: `${instructionBlock(language)}\n\nTranscript:\n${transcript}` }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: 0.4,
-      },
-    }),
-    signal: AbortSignal.timeout(120_000),
-  });
+    const body = await res.text();
+    if (!res.ok) return { ok: false, retryable: FALLBACK_STATUSES.has(res.status), message: geminiError(model, res.status, body) };
+    return { ok: true, body };
+  } catch (e) {
+    // A hung or unreachable model should not end the chain — let the next one try.
+    return { ok: false, retryable: true, message: `Gemini model ${model} did not respond: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
 
-  const bodyText = await res.text();
-  if (!res.ok) throw new Error(geminiError(res.status, bodyText));
-
+function parseSuggestions(bodyText: string, segments: Segment[]): ClipSuggestion[] {
   const text = firstText(JSON.parse(bodyText) as unknown);
   if (!text) throw new Error("Gemini returned an empty response. Try again.");
 
@@ -186,4 +195,25 @@ export async function requestClipSuggestions(segments: Segment[], language: stri
     throw new Error("Gemini returned invalid JSON. Try again.");
   }
   return validateSuggestions(parsed, segments);
+}
+
+export async function requestClipSuggestions(segments: Segment[], language: string | null): Promise<ClipSuggestion[]> {
+  const apiKey = process.env["GEMINI_API_KEY"];
+  if (!apiKey) throw new Error("Gemini API key is missing. Add GEMINI_API_KEY in project secrets.");
+
+  const transcript = segments
+    .map((s) => `[${s.start.toFixed(2)}-${s.end.toFixed(2)}] ${s.text}`)
+    .join("\n")
+    .slice(0, 120_000);
+  const prompt = `${instructionBlock(language)}\n\nTranscript:\n${transcript}`;
+
+  let lastError = "Gemini request failed.";
+  for (const model of GEMINI_MODELS) {
+    const result = await callGemini(model, apiKey, prompt);
+    if (result.ok) return parseSuggestions(result.body, segments);
+    lastError = result.message;
+    // Only a missing, overloaded or unreachable model is worth another attempt.
+    if (!result.retryable) throw new Error(result.message);
+  }
+  throw new Error(lastError);
 }
