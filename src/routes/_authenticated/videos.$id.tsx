@@ -128,10 +128,47 @@ function VideoDetail() {
       ) : (
         video.data && (
           <div className="mb-5">
-            <h1 className="line-clamp-2 text-xl font-semibold">{video.data.title}</h1>
-            <div className="mt-2">
-              <StatusChip status={video.data.status} />
+            <div className="flex items-start justify-between gap-2">
+              <h1 className="line-clamp-2 min-w-0 flex-1 text-xl font-semibold">{video.data.title}</h1>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-9 shrink-0" aria-label="Video options">
+                    <MoreHorizontal className="size-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem disabled={refetching || !video.data.youtube_id} onClick={() => void reFetch()}>
+                    <RotateCw className="size-4" /> Re-fetch transcript
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="text-destructive" onClick={() => setConfirmDelete(true)}>
+                    <Trash2 className="size-4" /> Delete video
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusChip status={video.data.status} />
+              {lang && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold uppercase text-muted-foreground">
+                  <Languages className="size-3" /> {lang}
+                </span>
+              )}
+            </div>
+            {langMismatch && (
+              <div className="mt-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3">
+                <p className="text-sm text-amber-200">
+                  No English captions found. The transcript is in {lang ?? "another language"}.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <Button size="sm" variant="secondary" className="flex-1" onClick={() => setLangDismissed(true)}>
+                    Continue anyway
+                  </Button>
+                  <Button size="sm" variant="destructive" className="flex-1" onClick={() => setConfirmDelete(true)}>
+                    Delete video
+                  </Button>
+                </div>
+              </div>
+            )}
             {video.data.status === "failed" && (
               <div className="mt-3">
                 <ErrorState message={video.data.error} onRetry={() => void run(id)} />
