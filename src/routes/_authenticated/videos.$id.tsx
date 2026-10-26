@@ -1,12 +1,15 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Clapperboard, RotateCw, Search, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Check, Clapperboard, Languages, MoreHorizontal, RotateCw, Search, Sparkles, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { createManualCandidate } from "@/lib/clips.functions";
-import { enqueueRender, getRenderQueueSnapshot, getServerRenderQueueSnapshot, subscribeRenderQueue } from "@/lib/render-queue";
+import { createManualCandidate, refetchTranscript } from "@/lib/clips.functions";
+import { deleteOwnedRow } from "@/lib/deletion";
+import { cancelPendingRenders, enqueueRender, getRenderQueueSnapshot, getServerRenderQueueSnapshot, subscribeRenderQueue } from "@/lib/render-queue";
+import { DeleteConfirmation } from "@/components/delete-confirmation";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { suggestionState } from "@/lib/suggestion-state";
 import { fmtTime, friendlyError, MAX_CLIP_SECONDS, type Segment } from "@/lib/types";
 import { useRealtime } from "@/hooks/use-realtime";
@@ -36,8 +39,15 @@ type Step = "transcript" | "suggestions" | "clips";
 
 function VideoDetail() {
   const { id } = Route.useParams();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
   const [step, setStep] = useState<Step>("transcript");
+  const [langDismissed, setLangDismissed] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [refetching, setRefetching] = useState(false);
   const { run } = usePipeline();
+  const refetch = useServerFn(refetchTranscript);
   useRealtime(["videos", "clip_candidates", "clips"], [["video", id], ["candidates", id], ["vclips", id]]);
 
   const video = useQuery({
@@ -48,6 +58,56 @@ function VideoDetail() {
       return data;
     },
   });
+
+  const transcriptMeta = useQuery({
+    queryKey: ["transcript-meta", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("transcripts")
+        .select("language,language_matches")
+        .eq("video_id", id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const lang = transcriptMeta.data?.language ?? null;
+  const langMismatch = transcriptMeta.data?.language_matches === false && !langDismissed;
+
+  async function removeVideo() {
+    setDeleting(true);
+    try {
+      const { data: cands } = await supabase.from("clip_candidates").select("id").eq("video_id", id);
+      await deleteOwnedRow(supabase, "videos", id);
+      cancelPendingRenders((cands ?? []).map((c) => c.id));
+      toast.success("Video deleted");
+      void navigate({ to: "/dashboard" });
+    } catch (e) {
+      toast.error(friendlyError(e instanceof Error ? e.message : String(e)));
+      setDeleting(false);
+    }
+  }
+
+  async function reFetch() {
+    setRefetching(true);
+    try {
+      const r = await refetch({ data: { videoId: id } });
+      if (!r.ok) {
+        toast.error(friendlyError(r.error));
+      } else {
+        toast.success(r.count ? `Transcript refreshed — ${r.count} new suggestions` : "Transcript refreshed");
+        void qc.invalidateQueries({ queryKey: ["transcript", id] });
+        void qc.invalidateQueries({ queryKey: ["transcript-meta", id] });
+        void qc.invalidateQueries({ queryKey: ["candidates", id] });
+        void qc.invalidateQueries({ queryKey: ["video", id] });
+      }
+    } catch (e) {
+      toast.error(friendlyError(e instanceof Error ? e.message : String(e)));
+    } finally {
+      setRefetching(false);
+    }
+  }
 
   const steps: { k: Step; label: string }[] = [
     { k: "transcript", label: "Transcript" },
@@ -67,10 +127,47 @@ function VideoDetail() {
       ) : (
         video.data && (
           <div className="mb-5">
-            <h1 className="line-clamp-2 text-xl font-semibold">{video.data.title}</h1>
-            <div className="mt-2">
-              <StatusChip status={video.data.status} />
+            <div className="flex items-start justify-between gap-2">
+              <h1 className="line-clamp-2 min-w-0 flex-1 text-xl font-semibold">{video.data.title}</h1>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-9 shrink-0" aria-label="Video options">
+                    <MoreHorizontal className="size-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem disabled={refetching || !video.data.youtube_id} onClick={() => void reFetch()}>
+                    <RotateCw className="size-4" /> Re-fetch transcript
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="text-destructive" onClick={() => setConfirmDelete(true)}>
+                    <Trash2 className="size-4" /> Delete video
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <StatusChip status={video.data.status} />
+              {lang && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold uppercase text-muted-foreground">
+                  <Languages className="size-3" /> {lang}
+                </span>
+              )}
+            </div>
+            {langMismatch && (
+              <div className="mt-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3">
+                <p className="text-sm text-amber-200">
+                  No English captions found. The transcript is in {lang ?? "another language"}.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <Button size="sm" variant="secondary" className="flex-1" onClick={() => setLangDismissed(true)}>
+                    Continue anyway
+                  </Button>
+                  <Button size="sm" variant="destructive" className="flex-1" onClick={() => setConfirmDelete(true)}>
+                    Delete video
+                  </Button>
+                </div>
+              </div>
+            )}
             {video.data.status === "failed" && (
               <div className="mt-3">
                 <ErrorState message={video.data.error} onRetry={() => void run(id)} />
@@ -102,6 +199,15 @@ function VideoDetail() {
       )}
       {step === "suggestions" && <SuggestionsStep videoId={id} />}
       {step === "clips" && <ClipsStep videoId={id} />}
+
+      <DeleteConfirmation
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Delete this video?"
+        description="This permanently removes the video, its transcript, suggestions and clips."
+        busy={deleting}
+        onConfirm={() => void removeVideo()}
+      />
     </>
   );
 }
