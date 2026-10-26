@@ -200,6 +200,15 @@ function VideoDetail() {
       )}
       {step === "suggestions" && <SuggestionsStep videoId={id} />}
       {step === "clips" && <ClipsStep videoId={id} />}
+
+      <DeleteConfirmation
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Delete this video?"
+        description="This permanently removes the video, its transcript, suggestions and clips."
+        busy={deleting}
+        onConfirm={() => void removeVideo()}
+      />
     </>
   );
 }
