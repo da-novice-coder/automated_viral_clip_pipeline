@@ -2,7 +2,7 @@
 import type { Segment } from "./types";
 
 /** The Gemini model used for clip suggestions — change it here only. */
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-3.5-flash";
 
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
