@@ -39,8 +39,15 @@ type Step = "transcript" | "suggestions" | "clips";
 
 function VideoDetail() {
   const { id } = Route.useParams();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
   const [step, setStep] = useState<Step>("transcript");
+  const [langDismissed, setLangDismissed] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [refetching, setRefetching] = useState(false);
   const { run } = usePipeline();
+  const refetch = useServerFn(refetchTranscript);
   useRealtime(["videos", "clip_candidates", "clips"], [["video", id], ["candidates", id], ["vclips", id]]);
 
   const video = useQuery({
@@ -51,6 +58,57 @@ function VideoDetail() {
       return data;
     },
   });
+
+  const transcriptMeta = useQuery({
+    queryKey: ["transcript-meta", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("transcripts")
+        .select("language,language_matches")
+        .eq("video_id", id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const lang = transcriptMeta.data?.language ?? null;
+  const langMismatch = transcriptMeta.data?.language_matches === false && !langDismissed;
+
+  async function removeVideo() {
+    setDeleting(true);
+    try {
+      const { data: cands } = await supabase.from("clip_candidates").select("id").eq("video_id", id);
+      const { error } = await deleteOwnedRow(supabase, "videos", id);
+      if (error) throw error;
+      cancelPendingRenders((cands ?? []).map((c) => c.id));
+      toast.success("Video deleted");
+      void navigate({ to: "/dashboard" });
+    } catch (e) {
+      toast.error(friendlyError(e instanceof Error ? e.message : String(e)));
+      setDeleting(false);
+    }
+  }
+
+  async function reFetch() {
+    setRefetching(true);
+    try {
+      const r = await refetch({ data: { videoId: id } });
+      if (!r.ok) {
+        toast.error(friendlyError(r.error));
+      } else {
+        toast.success(r.count ? `Transcript refreshed — ${r.count} new suggestions` : "Transcript refreshed");
+        void qc.invalidateQueries({ queryKey: ["transcript", id] });
+        void qc.invalidateQueries({ queryKey: ["transcript-meta", id] });
+        void qc.invalidateQueries({ queryKey: ["candidates", id] });
+        void qc.invalidateQueries({ queryKey: ["video", id] });
+      }
+    } catch (e) {
+      toast.error(friendlyError(e instanceof Error ? e.message : String(e)));
+    } finally {
+      setRefetching(false);
+    }
+  }
 
   const steps: { k: Step; label: string }[] = [
     { k: "transcript", label: "Transcript" },
