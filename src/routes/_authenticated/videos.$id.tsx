@@ -433,7 +433,7 @@ function SuggestionsStep({ videoId, error }: { videoId: string; error: string | 
         Render all approved ({approved.length})
       </Button>
       {items.map((c) => (
-        <SuggestionCard key={c.id} candidate={c} captionsOn={hasTranscript && captionsOn} />
+        <SuggestionCard key={c.id} candidate={c} captionsOn={hasTranscript && captionsOn} captionsAvailable={hasTranscript} />
       ))}
     </div>
   );

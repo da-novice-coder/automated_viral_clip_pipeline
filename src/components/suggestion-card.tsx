@@ -35,7 +35,15 @@ const CHIP_LABEL: Record<string, string> = {
 
 const inFlight = ["approved", "queued", "rendering"];
 
-export function SuggestionCard({ candidate: c, captionsOn }: { candidate: SuggestionRow; captionsOn: boolean }) {
+export function SuggestionCard({
+  candidate: c,
+  captionsOn,
+  captionsAvailable = true,
+}: {
+  candidate: SuggestionRow;
+  captionsOn: boolean;
+  captionsAvailable?: boolean;
+}) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetCaptions, setSheetCaptions] = useState(true);
 
@@ -110,19 +118,21 @@ export function SuggestionCard({ candidate: c, captionsOn }: { candidate: Sugges
             <SheetTitle>Re-render clip</SheetTitle>
             <SheetDescription>Render this clip again with the options below.</SheetDescription>
           </SheetHeader>
-          <div className="flex items-center justify-between py-4">
-            <Label htmlFor={`captions-${c.id}`} className="font-semibold">
-              Captions
-            </Label>
-            <Switch id={`captions-${c.id}`} checked={sheetCaptions} onCheckedChange={setSheetCaptions} />
-          </div>
+          {captionsAvailable && (
+            <div className="flex items-center justify-between py-4">
+              <Label htmlFor={`captions-${c.id}`} className="font-semibold">
+                Captions
+              </Label>
+              <Switch id={`captions-${c.id}`} checked={sheetCaptions} onCheckedChange={setSheetCaptions} />
+            </div>
+          )}
           <SheetFooter>
             <Button
               variant="hero"
               className="h-11 w-full"
               onClick={() => {
                 setSheetOpen(false);
-                enqueueRender([c.id], { captions: sheetCaptions });
+                enqueueRender([c.id], { captions: captionsAvailable && sheetCaptions });
                 toast.success("Queued for rendering");
               }}
             >
